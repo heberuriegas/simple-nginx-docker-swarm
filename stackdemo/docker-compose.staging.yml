@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  web:
+    image: "${DOCKER_SWARM_STAGING}:5000/stackdemo"
+    networks:
+      - nginx_default
+  redis:
+    image: redis:alpine
+    networks:
+      - nginx_default
+networks:
+  nginx_default:
+    external: true

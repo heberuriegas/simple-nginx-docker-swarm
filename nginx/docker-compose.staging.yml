@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  nginx:
+    image: "${DOCKER_SWARM_STAGING}:5000/nginx"
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+    networks:
+      - default
+networks:
+  default:

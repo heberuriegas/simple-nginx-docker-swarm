@@ -1,0 +1,36 @@
+#!/bin/bash
+
+branch=$(git symbolic-ref --short HEAD)
+
+if [ "$branch" = "main" ]; then
+    registry="$DOCKER_SWARM_PRODUCTION"
+    context="production"
+fi
+
+if [ "$branch" = "staging" ]; then
+    registry="$DOCKER_SWARM_STAGING"
+    context="staging"
+fi
+
+compose_file="docker-compose.$(echo $context).yml"
+
+if [ -z $registry ]; then
+    echo "Docker registry for the current branch is not set"
+    exit 2
+fi
+
+project=$(pwd | awk -F '/' {'print $NF'})
+
+echo "Building without cache"
+build=$(docker build --no-cache --network=host -f ./Dockerfile.$context . | tee /dev/tty)
+
+echo "Tagging to docker registry"
+tag=$(echo $build | grep "Successfully built" | awk -F ' ' {'print $NF'})
+echo "Tag: $tag"
+docker tag $tag "$registry:5000/$project"
+
+echo "Pushing to registry"
+docker push "$registry:5000/$project"
+
+echo "Deploying to stack"
+docker --context "simple-nginx-docker-swarm-$context" stack deploy --with-registry-auth --compose-file $compose_file $project

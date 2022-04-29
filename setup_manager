@@ -1,0 +1,150 @@
+#!/bin/bash
+
+echo "Simple nginx docker swarm manager configuration"
+echo ""
+
+detected_external_volume=$(ls /mnt | head -n 1)
+if [ ! -z $detected_external_volume ]; then
+    while true; do
+      read -p "Do you want to add $detected_external_volume as docker storage location? [yes/no]: " ANS
+        
+      case $ANS in 
+        'yes') 
+          external_volume=$(ls /mnt | head -n 1)
+          break;;
+        'no') 
+          break;;
+        *)
+          echo "Wrong answer, try again";;
+      esac
+    
+      break;
+    done
+fi
+
+while true; do
+  read -p "Docker registry username [my_username]: " ANS
+  registry_user=$ANS
+  break;
+done
+
+read -sp "Docker registry password [my_password]: " registry_password
+
+echo ""
+read -sp "Please provide cloudflare api token: " cloudflare_api_token
+
+echo ""
+while true; do
+  read -p "Certbot domains (comma separated) [mydomain.com,mydomain.io]: " ANS
+  domains=$ANS
+  break;
+done
+
+
+###
+# External volume
+###
+
+if [ ! -z $external_volume ]; then
+  mkdir -p /mnt/$external_volume/docker
+  mkdir -p /mnt/$external_volume/letsencrypt
+  ln -sf /mnt/$external_volume/letsencrypt /etc/letsencrypt
+
+  rm -f /etc/docker/daemon.json || true
+  echo "{ \"data-root\": \"/mnt/$external_volume/docker\" }" > /etc/docker/daemon.json
+  systemctl restart docker
+
+  echo "Docker volume config... Success!"
+fi
+
+rm -f /root/.env || true
+touch /root/.env
+chmod 600 /root/.env
+# echo "MANAGER_DOMAIN=${manager_domain}" >> /root/.env
+echo "DOMAINS=${domains}" >> /root/.env
+
+grep "export $(cat .env | xargs)" ~/.bashrc &>/dev/null && echo "export $(cat .env | xargs)" >> ~/.bashrc
+
+source ~/.bashrc
+
+echo "Set env variables... Success!"
+
+##
+# Certbot
+##
+
+# Create cloudflare ini
+mkdir -p /root/.secrets/certbot
+echo "dns_cloudflare_api_token = $cloudflare_api_token" > /root/.secrets/certbot/cloudflare.ini
+chmod 600 /root/.secrets/certbot/cloudflare.ini
+
+docker run -it --rm --name certbot \
+    -v "/etc/letsencrypt:/etc/letsencrypt" \
+    -v "/var/lib/letsencrypt:/var/lib/letsencrypt" \
+    -v "/root/.secrets/certbot:/root/.secrets/certbot" \
+    certbot/dns-cloudflare certonly \
+    --dns-cloudflare \
+    --dns-cloudflare-credentials /root/.secrets/certbot/cloudflare.ini \
+    --cert-name simple-nginx-docker-swarm \
+    -d $domains
+
+echo "0 */12 * * * docker run -it --rm --name certbot \
+    -v /etc/letsencrypt:/etc/letsencrypt \
+    -v /var/lib/letsencrypt:/var/lib/letsencrypt \
+    -v /root/.secrets/certbot:/root/.secrets/certbot \
+    certbot/dns-cloudflare renew \
+    --dns-cloudflare \
+    --dns-cloudflare-credentials ~/.secrets/certbot/cloudflare.ini \
+    --cert-name simple-nginx-docker-swarm" > /etc/cron.d/certbot
+
+chmod 644 /etc/cron.d/certbot
+
+echo "Certificates creation... Success!"
+
+###
+# Docker registry
+###
+
+mkdir -p /root/.secrets/docker
+
+docker run \
+  --entrypoint htpasswd \
+  httpd:2 -Bbn $registry_user $registry_password > /root/.secrets/docker/registry_auth
+
+chmod 600 /root/.secrets/docker/registry_auth
+
+docker run -d \
+  -p 5000:5000 \
+  --restart=always \
+  --name registry \
+  -v /root/.secrets/docker:/auth \
+  -e "REGISTRY_AUTH=htpasswd" \
+  -e "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm" \
+  -e "REGISTRY_STORAGE_DELETE_ENABLED=true" \
+  -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/registry_auth \
+  -v "/etc/letsencrypt:/etc/letsencrypt" \
+  -e REGISTRY_HTTP_TLS_CERTIFICATE=/etc/letsencrypt/live/simple-nginx-docker-swarm/fullchain.pem \
+  -e REGISTRY_HTTP_TLS_KEY=/etc/letsencrypt/live/simple-nginx-docker-swarm/privkey.pem \
+  registry:2
+
+echo "Docker registry creation... Success!"
+
+###
+# Deployer user
+###
+
+adduser --system --disabled-password --shell=/bin/bash deployer
+usermod -aG docker deployer
+
+echo "Deployer user creation... Success!"
+
+ip=$(ip a | grep inet | sed -n '3p' | awk -F ' ' {'print $2'} | awk -F '/' {'print $1'})
+
+docker swarm init --advertise-addr $ip
+
+echo "Deployer swarm init... Success!"
+
+echo "We are done!"
+
+echo "One last thing, please add an authorized key for deployer user."
+echo 'cat ~/.ssh/id_rsa.pub | ssh root@this_server "mkdir -p /home/deployer/.ssh && cat >> /home/deployer/.ssh/authorized_keys"'

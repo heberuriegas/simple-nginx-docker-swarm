@@ -1,0 +1,69 @@
+#!/bin/bash
+
+while getopts 'p:s:' OPTION; do
+    case "$OPTION" in
+        p)
+            production_endpoint="$OPTARG"
+            ;;
+        s)
+            staging_endpoint="$OPTARG"
+            ;;
+    esac
+done
+
+if [ -z $production_endpoint ] && [ -z $staging_endpoint]; then
+    echo "No environment was defined"
+fi
+
+# Create config file
+mkdir -p ~/.local/share/simple_nginx_docker_swarm
+rm -f ~/.local/share/simple_nginx_docker_swarm/config || true
+touch ~/.local/share/simple_nginx_docker_swarm/config
+chmod 600 ~/.local/share/simple_nginx_docker_swarm/config
+
+# Load env from rc
+if [ -n "$SHELL -c 'echo $ZSH_VERSION'" ]; then
+    grep "export \$(cat ~/.local/share/simple_nginx_docker_swarm/config | xargs)" ~/.zshrc &>/dev/null || (echo "# Simple nginx docker swarm" >> ~/.zshrc && echo "export \$(cat ~/.local/share/simple_nginx_docker_swarm/config | xargs)" >> ~/.zshrc)
+    echo "Env variables to .zshrc was successfully added"
+elif [ -n "$SHELL -c 'echo $BASH_VERSION'" ]; then
+    echo "# Simple nginx docker swarm" >> ~/.bashrc
+    grep "export \$(cat ~/.local/share/simple_nginx_docker_swarm/config | xargs)" ~/.bashrc &>/dev/null || (echo "# Simple nginx docker swarm" >> ~/.zshrc && echo "export \$(cat ~/.local/share/simple_nginx_docker_swarm/config | xargs)" >> ~/.bashrc)
+    echo "Env variables to .bashrc was successfully added"
+else
+    echo "# Simple nginx docker swarm" >> ~/.bashrc
+    grep "export \$(cat ~/.local/share/simple_nginx_docker_swarm/config | xargs)" ~/.bashrc &>/dev/null || (echo "# Simple nginx docker swarm" >> ~/.zshrc && echo "export \$(cat ~/.local/share/simple_nginx_docker_swarm/config | xargs)" >> ~/.bashrc)
+    echo "Env variables to .bashrc was successfully added"
+fi
+
+# Create deploy file
+sudo cp -f ./docker_swarm_deploy /usr/local/bin/
+sudo chmod 755 ./docker_swarm_deploy /usr/local/bin/
+
+if [ -n $production_endpoint ]; then
+    echo "DOCKER_SWARM_PRODUCTION=$production_endpoint" >> ~/.local/share/simple_nginx_docker_swarm/config
+
+    docker context create \
+        --docker host=ssh://deployer@$production_endpoint \
+        --description="Remote engine" \
+        simple-nginx-docker-swarm-production
+
+    echo "Production endpoint was successfully added"
+fi
+
+
+if [ -n $staging_endpoint ]; then
+    echo "DOCKER_SWARM_STAGING=$staging_endpoint" >> ~/.local/share/simple_nginx_docker_swarm/config
+
+    docker context create \
+        --docker host=ssh://deployer@$staging_endpoint \
+        --description="Remote engine" \
+        simple-nginx-docker-swarm-staging
+
+    echo "Staging endpoint was successfully added"
+fi
+
+echo "We are done!"
+
+echo ""
+echo "To finish execute this command in your terminal"
+echo "exec \$SHELL"
