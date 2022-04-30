@@ -21,8 +21,8 @@ fi
 
 project=$(pwd | awk -F '/' {'print $NF'})
 
-echo "Building without cache"
-build=$(docker build --no-cache --network=host -f ./Dockerfile.$context . | tee /dev/tty)
+echo "Building"
+build=$(docker build --network=host -f ./Dockerfile.$context . | tee /dev/tty)
 
 echo "Tagging to docker registry"
 tag=$(echo $build | grep "Successfully built" | awk -F ' ' {'print $NF'})
