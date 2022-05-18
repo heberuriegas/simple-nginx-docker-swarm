@@ -22,7 +22,7 @@ fi
 project=$(pwd | awk -F '/' {'print $NF'})
 
 echo "Building"
-build=$(docker build --network=host -f ./Dockerfile.$context . | tee /dev/tty)
+build=$(docker build --network=host -f ./Dockerfile.$context . --build-arg CACHEBUST=$(date +%s) | tee /dev/tty)
 
 echo "Tagging to docker registry"
 tag=$(echo $build | grep "Successfully built" | awk -F ' ' {'print $NF'})
