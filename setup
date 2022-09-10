@@ -37,7 +37,7 @@ fi
 
 # Create deploy file
 sudo cp -f ./docker_swarm_deploy /usr/local/bin/
-sudo chmod 755 ./docker_swarm_deploy /usr/local/bin/
+sudo chmod 755 /usr/local/bin/docker_swarm_deploy
 
 if [ -n $production_endpoint ]; then
     echo "DOCKER_SWARM_PRODUCTION=$production_endpoint" >> ~/.local/share/simple_nginx_docker_swarm/config
