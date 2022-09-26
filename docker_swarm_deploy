@@ -19,13 +19,25 @@ if [ -z $registry ]; then
     exit 2
 fi
 
-project=$(head .simple-nginx-docker-swarm 2&>/dev/null || pwd | awk -F '/' {'print $NF'})
+if head .simple-nginx-docker-swarm >/dev/null 2>&1
+then
+  project=$(head .simple-nginx-docker-swarm 2>/dev/null)
+else
+  project=$(pwd | awk -F '/' {'print $NF'})
+fi
 
-echo "Building"
+# project=$(head .simple-nginx-docker-swarm 2>/dev/null || pwd | awk -F '/' {'print $NF'})
+
+echo "Building $project"
 build=$(docker build --network=host -f ./Dockerfile.$context . --build-arg CACHEBUST=$(date +%s) | tee /dev/tty)
 
-echo "Tagging to docker registry"
 tag=$(echo $build | grep "Successfully built" | awk -F ' ' {'print $NF'})
+
+if [ "$tag" = "" ]; then
+  echo "Build did not complete successfully"
+  exit 1
+fi
+
 echo "Tag: $tag"
 docker tag $tag "$registry:5000/$project"
 
